@@ -1,5 +1,4 @@
 local ttt = require("ttt")
-local sys = require("ttt.system")
 local editor = require("ttt.editor")
 local fs = require("ttt.fs")
 local sys = require("ttt.system")
@@ -39,23 +38,26 @@ local function find_project_root(file_path)
 end
 
 local function run_script(script, args, result_handler)
-  local all_args = {}
+  local script_args = { script }
   for _, a in ipairs(args) do
-    table.insert(all_args, a)
+    table.insert(script_args, a)
   end
-  sys.exec_async("bash", { script, table.unpack(all_args) }, function(result)
-    if result.exit_code == 0 then
-      local output = (result.stdout or ""):gsub("%s+$", "")
-      if output ~= "" then
-        result_handler(output)
-      else
-        ttt.notify("Done", "info")
-      end
+  local result = sys.exec("bash", script_args)
+  if not result then
+    ttt.notify("Failed: exec returned nil", "error")
+    return
+  end
+  if result.exit_code == 0 then
+    local output = (result.stdout or ""):gsub("%s+$", "")
+    if output ~= "" then
+      result_handler(output)
     else
-      local msg = (result.stderr or ""):gsub("%s+$", "")
-      ttt.notify("Failed: " .. (msg ~= "" and msg or "exit " .. result.exit_code), "error")
+      ttt.notify("Done", "info")
     end
-  end)
+  else
+    local msg = (result.stderr or ""):gsub("%s+$", "")
+    ttt.notify("Failed: " .. (msg ~= "" and msg or "exit " .. result.exit_code), "error")
+  end
 end
 
 local function get_file_and_root()
