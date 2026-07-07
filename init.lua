@@ -4,6 +4,29 @@ local sys = require("ttt.system")
 
 local plugin_dir = ttt.plugin_dir()
 
+-- Build output buffer
+local build_lines = {}
+local build_panel = nil
+
+local function build_log(line)
+  table.insert(build_lines, line)
+  if #build_lines > 500 then
+    table.remove(build_lines, 1)
+  end
+  if build_panel then
+    build_panel:redraw()
+  end
+end
+
+local function build_clear()
+  build_lines = {}
+  table.insert(build_lines, "--- Build started ---")
+  if build_panel then
+    build_panel:redraw()
+  end
+end
+
+-- Config
 local actions = {
   { id = "switch-header", title = "DevTools: Switch Header/Source", script = "scripts/switch-header.sh" },
 }
@@ -45,16 +68,25 @@ local function run_script(script, args, result_handler)
     table.insert(script_args, a)
   end
   sys.exec_async("bash", script_args, function(result)
-    if result.exit_code == 0 then
-      local output = (result.stdout or ""):gsub("%s+$", "")
-      if output ~= "" then
-        result_handler(output)
-      else
-        ttt.notify("Done", "info")
+    local stdout = (result.stdout or ""):gsub("%s+$", "")
+    local stderr = (result.stderr or ""):gsub("%s+$", "")
+    if stdout ~= "" then
+      for line in stdout:gmatch("[^\n]+") do
+        build_log(line)
       end
+    end
+    if stderr ~= "" then
+      for line in stderr:gmatch("[^\n]+") do
+        build_log(line)
+      end
+    end
+    if result.exit_code == 0 then
+      build_log("--- Build succeeded ---")
     else
-      local msg = ((result.stderr or "") .. "\n" .. (result.stdout or "")):gsub("%s+$", "")
-      ttt.notify("Failed: " .. (msg ~= "" and msg or "exit " .. result.exit_code), "error")
+      build_log("--- Build failed (exit " .. result.exit_code .. ") ---")
+    end
+    if result_handler then
+      result_handler(stdout, stderr, result.exit_code)
     end
   end)
 end
@@ -75,6 +107,7 @@ end
 
 local commands = {}
 
+-- Switch header/source
 for _, action in ipairs(actions) do
   local cmd_id = "devtools." .. action.id
   local captured_action = action
@@ -85,22 +118,23 @@ for _, action in ipairs(actions) do
       local file_path, project_root = get_file_and_root()
       if not file_path then return end
       local script = plugin_dir .. "/" .. captured_action.script
-      run_script(script, { file_path, project_root }, function(output)
-        if captured_action.id == "switch-header" then
-          local target = output:match("^(.+)$")
+      sys.exec_async("bash", { script, file_path, project_root }, function(result)
+        if result.exit_code == 0 then
+          local target = (result.stdout or ""):match("^(.+)$")
           if target and target ~= file_path then
             ttt.open_file(target)
           else
             ttt.notify("No matching header/source found", "warn")
           end
         else
-          ttt.notify(output, "info")
+          ttt.notify("Switch failed", "error")
         end
       end)
     end,
   })
 end
 
+-- Build profiles
 local profiles = {
   { id = "linux-debug", label = "Linux Debug", generator = "Ninja Multi-Config", buildType = "Debug", buildDir = "build/linux-debug" },
   { id = "linux-release", label = "Linux Release", generator = "Ninja Multi-Config", buildType = "Release", buildDir = "build/linux-release" },
@@ -116,6 +150,7 @@ local function apply_profile(profile)
   ttt.notify("Profile: " .. profile.label .. " (" .. build_config.generator .. " " .. build_config.buildType .. ")", "info")
 end
 
+-- Build profile drawer
 table.insert(commands, {
   id = "devtools.configure-build",
   title = "DevTools: Configure Build Profile",
@@ -136,11 +171,7 @@ table.insert(commands, {
           if p.buildType == build_config.buildType and (p.buildDir == build_config.buildDir or not p.buildDir) then
             badge = "active"
           end
-          table.insert(items, {
-            id = p.id,
-            label = p.label,
-            badge = badge,
-          })
+          table.insert(items, { id = p.id, label = p.label, badge = badge })
         end
         panel:list({
           items = items,
@@ -167,6 +198,7 @@ table.insert(commands, {
   end,
 })
 
+-- Profile switch commands
 for _, profile in ipairs(profiles) do
   local captured = profile
   table.insert(commands, {
@@ -178,6 +210,7 @@ for _, profile in ipairs(profiles) do
   })
 end
 
+-- Build commands
 local build_actions = {
   { id = "build-configure-profile", title = "DevTools: Configure (Current Profile)", script = "scripts/build-configure.sh" },
   { id = "build-compile-profile", title = "DevTools: Build (Current Profile)", script = "scripts/build-compile.sh" },
@@ -194,16 +227,61 @@ for _, action in ipairs(build_actions) do
     handler = function()
       local file_path, project_root = get_file_and_root()
       if not file_path then return end
+      build_clear()
       local script = plugin_dir .. "/" .. captured_action.script
-      run_script(script, { file_path, project_root }, function(output)
-        ttt.notify(output, "info")
+      run_script(script, { file_path, project_root }, function(stdout, stderr, exit_code)
+        if exit_code == 0 then
+          ttt.notify("Build succeeded", "info")
+        else
+          ttt.notify("Build failed (exit " .. exit_code .. ")", "error")
+        end
       end)
     end,
   })
 end
 
+-- Clear build output command
+table.insert(commands, {
+  id = "devtools.build-clear",
+  title = "DevTools: Clear Build Output",
+  handler = function()
+    build_lines = {}
+    if build_panel then
+      build_panel:redraw()
+    end
+    ttt.notify("Build output cleared", "info")
+  end,
+})
+
 ttt.register({
   commands = commands,
+  bottom = {
+    title = "Build",
+    render = function(panel)
+      build_panel = panel
+      if #build_lines == 0 then
+        panel:label({ text = "No build output yet.", style = "muted" })
+        return
+      end
+      local _, h = panel:size()
+      local visible = h - 2
+      if visible < 1 then visible = 1 end
+      local start = #build_lines - visible + 1
+      if start < 1 then start = 1 end
+      for i = start, #build_lines do
+        local line = build_lines[i]
+        local style = "default"
+        if line:match("^--- Build failed") then
+          style = "error"
+        elseif line:match("^--- Build succeeded") then
+          style = "info"
+        elseif line:match("^--- Build started") then
+          style = "muted"
+        end
+        panel:label({ text = line, style = style })
+      end
+    end,
+  },
 })
 
 ttt.log("devtools: loaded with " .. #commands .. " commands")
