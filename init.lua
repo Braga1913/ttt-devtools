@@ -18,7 +18,7 @@ local build_config = {
 }
 
 local function file_exists(path)
-  local result = sys.exec("test", { "-f", path })
+  local result = sys.exec("bash", { "-c", "test -f '" .. path .. "'" })
   return result and result.exit_code == 0
 end
 
