@@ -4,14 +4,12 @@ local sys = require("ttt.system")
 
 local plugin_dir = ttt.plugin_dir()
 
--- Config: actions define script-based commands
 local actions = {
   { id = "switch-header", title = "DevTools: Switch Header/Source", script = "scripts/switch-header.sh" },
 }
 
--- Build config (in-memory, defaults)
 local build_config = {
-  generator = "Ninja",
+  generator = "Ninja Multi-Config",
   buildType = "Debug",
   buildDir = "build",
   extraArgs = "",
@@ -46,22 +44,19 @@ local function run_script(script, args, result_handler)
   for _, a in ipairs(args) do
     table.insert(script_args, a)
   end
-  local result = sys.exec("bash", script_args)
-  if not result then
-    ttt.notify("Failed: exec returned nil", "error")
-    return
-  end
-  if result.exit_code == 0 then
-    local output = (result.stdout or ""):gsub("%s+$", "")
-    if output ~= "" then
-      result_handler(output)
+  sys.exec_async("bash", script_args, function(result)
+    if result.exit_code == 0 then
+      local output = (result.stdout or ""):gsub("%s+$", "")
+      if output ~= "" then
+        result_handler(output)
+      else
+        ttt.notify("Done", "info")
+      end
     else
-      ttt.notify("Done", "info")
+      local msg = ((result.stderr or "") .. "\n" .. (result.stdout or "")):gsub("%s+$", "")
+      ttt.notify("Failed: " .. (msg ~= "" and msg or "exit " .. result.exit_code), "error")
     end
-  else
-    local msg = (result.stderr or ""):gsub("%s+$", "")
-    ttt.notify("Failed: " .. (msg ~= "" and msg or "exit " .. result.exit_code), "error")
-  end
+  end)
 end
 
 local function get_file_and_root()
@@ -71,12 +66,15 @@ local function get_file_and_root()
     ttt.notify("DevTools: no active file", "warn")
     return nil, nil
   end
-  return file_path, find_project_root(file_path) or ""
+  local root = find_project_root(file_path) or ""
+  if root == "" then
+    ttt.notify("DevTools: no project root found for " .. file_path, "warn")
+  end
+  return file_path, root
 end
 
 local commands = {}
 
--- Register script-based actions
 for _, action in ipairs(actions) do
   local cmd_id = "devtools." .. action.id
   local captured_action = action
@@ -103,12 +101,11 @@ for _, action in ipairs(actions) do
   })
 end
 
--- Build profile actions
 local profiles = {
-  { id = "linux-debug", label = "Linux Debug", generator = "Ninja", buildType = "Debug", buildDir = "build/linux-debug" },
-  { id = "linux-release", label = "Linux Release", generator = "Ninja", buildType = "Release", buildDir = "build/linux-release" },
-  { id = "windows-debug", label = "Windows Debug", generator = "Ninja", buildType = "Debug", buildDir = "build/windows-debug" },
-  { id = "windows-release", label = "Windows Release", generator = "Ninja", buildType = "Release", buildDir = "build/windows-release" },
+  { id = "linux-debug", label = "Linux Debug", generator = "Ninja Multi-Config", buildType = "Debug", buildDir = "build/linux-debug" },
+  { id = "linux-release", label = "Linux Release", generator = "Ninja Multi-Config", buildType = "Release", buildDir = "build/linux-release" },
+  { id = "windows-debug", label = "Windows Debug", generator = "Ninja Multi-Config", buildType = "Debug", buildDir = "build/windows-debug" },
+  { id = "windows-release", label = "Windows Release", generator = "Ninja Multi-Config", buildType = "Release", buildDir = "build/windows-release" },
   { id = "custom", label = "Custom (current config)", generator = nil, buildType = nil, buildDir = nil },
 }
 
@@ -119,7 +116,6 @@ local function apply_profile(profile)
   ttt.notify("Profile: " .. profile.label .. " (" .. build_config.generator .. " " .. build_config.buildType .. ")", "info")
 end
 
--- Configure build drawer
 table.insert(commands, {
   id = "devtools.configure-build",
   title = "DevTools: Configure Build Profile",
@@ -171,7 +167,6 @@ table.insert(commands, {
   end,
 })
 
--- Switch profile commands
 for _, profile in ipairs(profiles) do
   local captured = profile
   table.insert(commands, {
@@ -183,7 +178,6 @@ for _, profile in ipairs(profiles) do
   })
 end
 
--- Build commands
 local build_actions = {
   { id = "build-configure-profile", title = "DevTools: Configure (Current Profile)", script = "scripts/build-configure.sh" },
   { id = "build-compile-profile", title = "DevTools: Build (Current Profile)", script = "scripts/build-compile.sh" },
