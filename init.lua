@@ -2,46 +2,22 @@ local ttt = require("ttt")
 local sys = require("ttt.system")
 local editor = require("ttt.editor")
 local fs = require("ttt.fs")
-local json = require("ttt.json")
+local sys = require("ttt.system")
 
 local plugin_dir = ttt.plugin_dir()
-local config_path = plugin_dir .. "/config.json"
-local build_config_path = plugin_dir .. "/build-config.json"
 
-local function load_json(path)
-  local content = fs.read(path)
-  if not content then return nil end
-  local data, err = json.decode(content)
-  if not data then
-    ttt.log("error", "devtools: failed to parse " .. path .. ": " .. (err or ""))
-    return nil
-  end
-  return data
-end
+-- Config: actions define script-based commands
+local actions = {
+  { id = "switch-header", title = "DevTools: Switch Header/Source", key = "ctrl+k s", script = "scripts/switch-header.sh" },
+}
 
-local function save_json(path, data)
-  local ok, err = pcall(function()
-    fs.write(path, json.encode(data))
-  end)
-  if not ok then
-    ttt.log("error", "devtools: failed to save " .. path .. ": " .. (err or ""))
-  end
-  return ok
-end
-
-local function load_config()
-  return load_json(config_path)
-end
-
-local function load_build_config()
-  return load_json(build_config_path) or {
-    generator = "Ninja",
-    buildType = "Debug",
-    buildDir = "build",
-    extraArgs = "",
-    buildDirs = {},
-  }
-end
+-- Build config (in-memory, defaults)
+local build_config = {
+  generator = "Ninja",
+  buildType = "Debug",
+  buildDir = "build",
+  extraArgs = "",
+}
 
 local function find_project_root(file_path)
   if not file_path or file_path == "" then return nil end
@@ -92,42 +68,36 @@ local function get_file_and_root()
   return file_path, find_project_root(file_path) or ""
 end
 
--- Build config panel state
-local build_config = load_build_config()
-
 local commands = {}
 local keybindings = {}
 
--- Register script-based actions from config.json
-local cfg = load_config()
-if cfg and cfg.actions then
-  for _, action in ipairs(cfg.actions) do
-    local cmd_id = "devtools." .. action.id
-    local captured_action = action
-    table.insert(commands, {
-      id = cmd_id,
-      title = action.title,
-      handler = function()
-        local file_path, project_root = get_file_and_root()
-        if not file_path then return end
-        local script = plugin_dir .. "/" .. captured_action.script
-        run_script(script, { file_path, project_root }, function(output)
-          if captured_action.id == "switch-header" then
-            local target = output:match("^(.+)$")
-            if target and target ~= file_path then
-              ttt.open_file(target)
-            else
-              ttt.notify("No matching header/source found", "warn")
-            end
+-- Register script-based actions
+for _, action in ipairs(actions) do
+  local cmd_id = "devtools." .. action.id
+  local captured_action = action
+  table.insert(commands, {
+    id = cmd_id,
+    title = action.title,
+    handler = function()
+      local file_path, project_root = get_file_and_root()
+      if not file_path then return end
+      local script = plugin_dir .. "/" .. captured_action.script
+      run_script(script, { file_path, project_root }, function(output)
+        if captured_action.id == "switch-header" then
+          local target = output:match("^(.+)$")
+          if target and target ~= file_path then
+            ttt.open_file(target)
           else
-            ttt.notify(output, "info")
+            ttt.notify("No matching header/source found", "warn")
           end
-        end)
-      end,
-    })
-    if action.key then
-      table.insert(keybindings, { key = action.key, command = cmd_id })
-    end
+        else
+          ttt.notify(output, "info")
+        end
+      end)
+    end,
+  })
+  if action.key then
+    table.insert(keybindings, { key = action.key, command = cmd_id })
   end
 end
 
@@ -144,11 +114,10 @@ local function apply_profile(profile)
   if profile.generator then build_config.generator = profile.generator end
   if profile.buildType then build_config.buildType = profile.buildType end
   if profile.buildDir then build_config.buildDir = profile.buildDir end
-  save_json(build_config_path, build_config)
   ttt.notify("Profile: " .. profile.label .. " (" .. build_config.generator .. " " .. build_config.buildType .. ")", "info")
 end
 
--- Configure build command
+-- Configure build drawer
 table.insert(commands, {
   id = "devtools.configure-build",
   title = "DevTools: Configure Build Profile",
@@ -200,7 +169,7 @@ table.insert(commands, {
   end,
 })
 
--- Switch profile command
+-- Switch profile commands
 for _, profile in ipairs(profiles) do
   local captured = profile
   table.insert(commands, {
@@ -212,7 +181,7 @@ for _, profile in ipairs(profiles) do
   })
 end
 
--- Build commands that pass profile info
+-- Build commands
 local build_actions = {
   { id = "build-configure-profile", title = "DevTools: Configure (Current Profile)", key = "ctrl+k c", script = "scripts/build-configure.sh" },
   { id = "build-compile-profile", title = "DevTools: Build (Current Profile)", key = "ctrl+k b", script = "scripts/build-compile.sh" },

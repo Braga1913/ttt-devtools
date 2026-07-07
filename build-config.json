@@ -1,12 +1,1 @@
-{
-  "generator": "Ninja",
-  "buildType": "Debug",
-  "buildDir": "build",
-  "extraArgs": "",
-  "buildDirs": {
-    "linux-debug": "build/linux-debug",
-    "linux-release": "build/linux-release",
-    "windows-debug": "build/windows-debug",
-    "windows-release": "build/windows-release"
-  }
-}
+{"buildDir":"build/linux-debug","buildDirs":{"linux-debug":"build/linux-debug","linux-release":"build/linux-release","windows-debug":"build/windows-debug","windows-release":"build/windows-release"},"buildType":"Debug","extraArgs":"","generator":"Ninja"}
