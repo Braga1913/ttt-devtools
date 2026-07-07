@@ -1,0 +1,11 @@
+{
+  "actions": [
+    {
+      "id": "switch-header",
+      "title": "DevTools: Switch Header/Source",
+      "key": "ctrl+k s",
+      "script": "scripts/switch-header.sh",
+      "description": "Switch between .cpp/.h, .cc/.hh, .cxx/.hxx pairs"
+    }
+  ]
+}
