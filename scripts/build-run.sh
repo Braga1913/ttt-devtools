@@ -37,7 +37,7 @@ if [[ -z "$PROJECT_NAME" ]]; then
 fi
 
 EXECUTABLE=""
-for candidate in "$BUILD_DIR/$PROJECT_NAME" "$BUILD_DIR/$PROJECT_NAME.exe" "$BUILD_DIR/src/$PROJECT_NAME" "$BUILD_DIR/bin/$PROJECT_NAME"; do
+for candidate in "$BUILD_DIR/$BUILD_TYPE/$PROJECT_NAME" "$BUILD_DIR/$PROJECT_NAME" "$BUILD_DIR/$BUILD_TYPE/$PROJECT_NAME.exe" "$BUILD_DIR/$PROJECT_NAME.exe" "$BUILD_DIR/src/$BUILD_TYPE/$PROJECT_NAME" "$BUILD_DIR/src/$PROJECT_NAME" "$BUILD_DIR/bin/$BUILD_TYPE/$PROJECT_NAME" "$BUILD_DIR/bin/$PROJECT_NAME"; do
   if [[ -x "$candidate" ]]; then
     EXECUTABLE="$candidate"
     break
@@ -45,7 +45,7 @@ for candidate in "$BUILD_DIR/$PROJECT_NAME" "$BUILD_DIR/$PROJECT_NAME.exe" "$BUI
 done
 
 if [[ -z "$EXECUTABLE" ]]; then
-  EXECUTABLE=$(find "$BUILD_DIR" -maxdepth 3 -type f -executable 2>/dev/null | head -n 1)
+  EXECUTABLE=$(find "$BUILD_DIR" -path "*/CMakeFiles" -prune -o -maxdepth 3 -type f -executable -not -name "*.bin" -print 2>/dev/null | head -n 1)
 fi
 
 if [[ -z "$EXECUTABLE" ]]; then
