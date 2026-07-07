@@ -1,6 +1,5 @@
 local ttt = require("ttt")
 local editor = require("ttt.editor")
-local fs = require("ttt.fs")
 local sys = require("ttt.system")
 
 local plugin_dir = ttt.plugin_dir()
@@ -18,6 +17,11 @@ local build_config = {
   extraArgs = "",
 }
 
+local function file_exists(path)
+  local result = sys.exec("test", { "-f", path })
+  return result and result.exit_code == 0
+end
+
 local function find_project_root(file_path)
   if not file_path or file_path == "" then return nil end
   local dir = file_path:match("^(.+)/[^/]+$")
@@ -26,7 +30,7 @@ local function find_project_root(file_path)
   local search = dir
   for _ = 1, 30 do
     for _, marker in ipairs(markers) do
-      if fs.exists(search .. "/" .. marker) then
+      if file_exists(search .. "/" .. marker) then
         return search
       end
     end
