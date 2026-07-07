@@ -7,7 +7,7 @@ local plugin_dir = ttt.plugin_dir()
 
 -- Config: actions define script-based commands
 local actions = {
-  { id = "switch-header", title = "DevTools: Switch Header/Source", key = "ctrl+k s", script = "scripts/switch-header.sh" },
+  { id = "switch-header", title = "DevTools: Switch Header/Source", script = "scripts/switch-header.sh" },
 }
 
 -- Build config (in-memory, defaults)
@@ -71,7 +71,6 @@ local function get_file_and_root()
 end
 
 local commands = {}
-local keybindings = {}
 
 -- Register script-based actions
 for _, action in ipairs(actions) do
@@ -98,9 +97,6 @@ for _, action in ipairs(actions) do
       end)
     end,
   })
-  if action.key then
-    table.insert(keybindings, { key = action.key, command = cmd_id })
-  end
 end
 
 -- Build profile actions
@@ -185,10 +181,10 @@ end
 
 -- Build commands
 local build_actions = {
-  { id = "build-configure-profile", title = "DevTools: Configure (Current Profile)", key = "ctrl+k c", script = "scripts/build-configure.sh" },
-  { id = "build-compile-profile", title = "DevTools: Build (Current Profile)", key = "ctrl+k b", script = "scripts/build-compile.sh" },
-  { id = "build-clean-profile", title = "DevTools: Clean (Current Profile)", key = "ctrl+k x", script = "scripts/build-clean.sh" },
-  { id = "build-run-profile", title = "DevTools: Run (Current Profile)", key = "ctrl+k r", script = "scripts/build-run.sh" },
+  { id = "build-configure-profile", title = "DevTools: Configure (Current Profile)", script = "scripts/build-configure.sh" },
+  { id = "build-compile-profile", title = "DevTools: Build (Current Profile)", script = "scripts/build-compile.sh" },
+  { id = "build-clean-profile", title = "DevTools: Clean (Current Profile)", script = "scripts/build-clean.sh" },
+  { id = "build-run-profile", title = "DevTools: Run (Current Profile)", script = "scripts/build-run.sh" },
 }
 
 for _, action in ipairs(build_actions) do
@@ -206,14 +202,10 @@ for _, action in ipairs(build_actions) do
       end)
     end,
   })
-  if action.key then
-    table.insert(keybindings, { key = action.key, command = cmd_id })
-  end
 end
 
 ttt.register({
   commands = commands,
-  keybindings = keybindings,
 })
 
-ttt.log("devtools: loaded with " .. #commands .. " commands and " .. #keybindings .. " keybindings")
+ttt.log("devtools: loaded with " .. #commands .. " commands")
