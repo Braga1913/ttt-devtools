@@ -223,13 +223,11 @@ local function create_implementation()
   end
   local content = table.concat(source_lines, "\n") .. "\n"
   local tmp_file = "/tmp/create_impl_" .. os.time() .. ".cpp"
-  local f = io.open(tmp_file, "w")
-  if not f then
-    ttt.notify("Create Implementation: failed to create temp file", "error")
-    return
+  local hex = ""
+  for i = 1, #content do
+    hex = hex .. string.format("%02x", string.byte(content, i))
   end
-  f:write(content)
-  f:close()
+  sys.exec("bash", { "-c", "echo '" .. hex .. "' | xxd -r -p > " .. tmp_file })
   sys.exec("cp", { tmp_file, source_path })
   os.remove(tmp_file)
   ttt.notify("Created implementation in " .. source_path, "info")
