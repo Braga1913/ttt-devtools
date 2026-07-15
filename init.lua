@@ -65,6 +65,177 @@ local function find_project_root(file_path)
   return dir
 end
 
+-- Create Implementation feature
+local function find_source_file(header_path)
+  local base = header_path:match("^(.+)%.h$") or header_path:match("^(.+)%.hpp$")
+  if not base then return nil end
+  local extensions = { ".cpp", ".cc", ".cxx" }
+  for _, ext in ipairs(extensions) do
+    local source = base .. ext
+    if file_exists(source) then
+      return source
+    end
+  end
+  return base .. ".cpp"
+end
+
+local function parse_declaration(line)
+  local trimmed = line:match("^%s*(.-)%s*$")
+  if not trimmed or trimmed == "" then return nil end
+  if not trimmed:match(";%s*$") and not trimmed:match(";%s*$") then return nil end
+  local is_virtual = trimmed:match("^virtual%s+") ~= nil
+  if is_virtual then
+    trimmed = trimmed:gsub("^virtual%s+", "")
+  end
+  local is_static = trimmed:match("^static%s+") ~= nil
+  if is_static then
+    trimmed = trimmed:gsub("^static%s+", "")
+  end
+  local is_inline = trimmed:match("^inline%s+") ~= nil
+  if is_inline then
+    trimmed = trimmed:gsub("^inline%s+", "")
+  end
+  trimmed = trimmed:match("^(.-)%s*;%s*$")
+  if not trimmed then return nil end
+  local is_default = trimmed:match("%s*=%s*default%s*$") ~= nil
+  if is_default then return nil end
+  local is_pure_virtual = trimmed:match("%s*=%s*0%s*$") ~= nil
+  if is_pure_virtual then
+    trimmed = trimmed:gsub("%s*=%s*0%s*$", "")
+  end
+  trimmed = trimmed:gsub("%s*override%s*$", "")
+  trimmed = trimmed:gsub("%s*final%s*$", "")
+  local return_type, rest = trimmed:match("^(.-)%s+([%w~_]+%s*%(.*)")
+  if not return_type or return_type == "" then
+    local ctor_dtor = trimmed:match("^([%w_~]+)%s*%((.*)")
+    if ctor_dtor then
+      local params = trimmed:match("^[%w_~]+%s*%((.*)")
+      if not params then params = "" end
+      return {
+        is_constructor = true,
+        class_name = ctor_dtor,
+        params = "(" .. params,
+        is_virtual = is_virtual,
+        is_pure_virtual = is_pure_virtual,
+      }
+    end
+    return nil
+  end
+  local func_name, params = rest:match("^([%w_~]+)%s*%((.*)")
+  if not func_name then return nil end
+  return {
+    return_type = return_type,
+    func_name = func_name,
+    params = "(" .. params,
+    is_virtual = is_virtual,
+    is_pure_virtual = is_pure_virtual,
+  }
+end
+
+local function generate_definition(decl, class_name)
+  if decl.is_constructor then
+    return class_name .. "::" .. class_name .. decl.params .. "\n{\n}"
+  end
+  if decl.is_destructor then
+    return class_name .. "::~" .. class_name .. decl.params .. "\n{\n}"
+  end
+  local qualifiers = ""
+  if decl.is_virtual then
+    qualifiers = qualifiers .. " virtual"
+  end
+  local func_def = decl.return_type .. " " .. class_name .. "::" .. decl.func_name .. decl.params
+  func_def = func_def .. "\n{\n}"
+  return func_def
+end
+
+local function find_insert_point(lines)
+  local last_include = 0
+  for i, line in ipairs(lines) do
+    if line:match("^%s*#include") then
+      last_include = i
+    end
+  end
+  if last_include > 0 then
+    return last_include + 1
+  end
+  return #lines + 1
+end
+
+local function create_implementation()
+  local file_path = ""
+  local ok = pcall(function() file_path = editor.file_path() end)
+  if not ok or not file_path or file_path == "" then
+    ttt.notify("Create Implementation: no active file", "warn")
+    return
+  end
+  local is_header = file_path:match("%.h$") or file_path:match("%.hpp$")
+  if not is_header then
+    ttt.notify("Create Implementation: not a header file", "warn")
+    return
+  end
+  local line = editor.current_line()
+  if not line or line == "" then
+    ttt.notify("Create Implementation: no line at cursor", "warn")
+    return
+  end
+  local decl = parse_declaration(line)
+  if not decl then
+    ttt.notify("Create Implementation: not a function declaration", "warn")
+    return
+  end
+  local source_path = find_source_file(file_path)
+  if not source_path then
+    ttt.notify("Create Implementation: could not determine source file", "warn")
+    return
+  end
+  local header_name = file_path:match("([^/]+)$")
+  local source_lines = {}
+  if file_exists(source_path) then
+    local content = sys.exec("cat", { source_path })
+    if content and content.exit_code == 0 then
+      for line in (content.stdout or ""):gmatch("[^\n]+") do
+        table.insert(source_lines, line)
+      end
+    end
+  else
+    table.insert(source_lines, '#include "' .. header_name .. '"')
+  end
+  local header_path_pattern = file_path:match("([^/]+)$")
+  local has_include = false
+  for _, line in ipairs(source_lines) do
+    if line:match("#include.*" .. header_path_pattern:gsub("%.", "%%.")) then
+      has_include = true
+      break
+    end
+  end
+  if not has_include then
+    table.insert(source_lines, 1, '#include "' .. header_name .. '"')
+  end
+  local class_name = file_path:match("([^/]+)%.h$") or file_path:match("([^/]+)%.hpp$")
+  local definition = generate_definition(decl, class_name)
+  local insert_point = find_insert_point(source_lines)
+  local def_lines = {}
+  for def_line in definition:gmatch("[^\n]+") do
+    table.insert(def_lines, def_line)
+  end
+  for i, def_line in ipairs(def_lines) do
+    table.insert(source_lines, insert_point + i - 1, def_line)
+  end
+  local content = table.concat(source_lines, "\n") .. "\n"
+  local tmp_file = "/tmp/create_impl_" .. os.time() .. ".cpp"
+  local f = io.open(tmp_file, "w")
+  if not f then
+    ttt.notify("Create Implementation: failed to create temp file", "error")
+    return
+  end
+  f:write(content)
+  f:close()
+  sys.exec("cp", { tmp_file, source_path })
+  os.remove(tmp_file)
+  ttt.notify("Created implementation in " .. source_path, "info")
+  ttt.open_file(source_path)
+end
+
 local function run_script(script, args, result_handler)
   local script_args = { script }
   for _, a in ipairs(args) do
@@ -136,6 +307,13 @@ for _, action in ipairs(actions) do
     end,
   })
 end
+
+-- Create implementation command
+table.insert(commands, {
+  id = "devtools.create-implementation",
+  title = "DevTools: Create Implementation",
+  handler = create_implementation,
+})
 
 -- Build profiles
 local profiles = {
