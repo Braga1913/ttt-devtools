@@ -229,7 +229,7 @@ local function create_implementation()
   end
   sys.exec("bash", { "-c", "echo '" .. hex .. "' | xxd -r -p > " .. tmp_file })
   sys.exec("cp", { tmp_file, source_path })
-  os.remove(tmp_file)
+  sys.exec("rm", { tmp_file })
   ttt.notify("Created implementation in " .. source_path, "info")
   ttt.open_file(source_path)
 end
