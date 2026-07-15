@@ -7,12 +7,14 @@ local plugin_dir = ttt.plugin_dir()
 -- Build output buffer
 local build_lines = {}
 local build_panel = nil
+local build_scroll = 0
 
 local function build_log(line)
   table.insert(build_lines, line)
   if #build_lines > 500 then
     table.remove(build_lines, 1)
   end
+  build_scroll = 0
   if build_panel then
     build_panel:redraw()
   end
@@ -21,6 +23,7 @@ end
 local function build_clear()
   build_lines = {}
   table.insert(build_lines, "--- Build started ---")
+  build_scroll = 0
   if build_panel then
     build_panel:redraw()
   end
@@ -120,7 +123,7 @@ for _, action in ipairs(actions) do
       local script = plugin_dir .. "/" .. captured_action.script
       sys.exec_async("bash", { script, file_path, project_root }, function(result)
         if result.exit_code == 0 then
-          local target = (result.stdout or ""):match("^(.+)$")
+          local target = (result.stdout or ""):gsub("%s+$", ""):match("^(.+)$")
           if target and target ~= file_path then
             ttt.open_file(target)
           else
@@ -253,34 +256,107 @@ table.insert(commands, {
   end,
 })
 
+-- Copy build output command
+table.insert(commands, {
+  id = "devtools.build-copy",
+  title = "DevTools: Copy Build Output",
+  handler = function()
+    if #build_lines == 0 then
+      ttt.notify("No build output to copy", "warn")
+      return
+    end
+    local text = table.concat(build_lines, "\n")
+    -- encode as hex to avoid shell escaping issues
+    local hex = ""
+    for i = 1, #text do
+      hex = hex .. string.format("%02x", string.byte(text, i))
+    end
+    local cmd = "echo '" .. hex .. "' | xxd -r -p | wl-copy 2>/dev/null || echo '" .. hex .. "' | xxd -r -p | xclip -selection clipboard 2>/dev/null"
+    local result = sys.exec("bash", {"-c", cmd})
+    if result and result.exit_code == 0 then
+      ttt.notify("Build output copied to clipboard (" .. #build_lines .. " lines)", "info")
+    else
+      ttt.notify("Copy failed (no clipboard tool found?)", "error")
+    end
+  end,
+})
+
+local function build_render(panel)
+  build_panel = panel
+  if #build_lines == 0 then
+    panel:label({ text = "No build output yet.", style = "muted" })
+    return
+  end
+  local _, h = panel:size()
+  local visible = h - 2
+  if visible < 1 then visible = 1 end
+  local total = #build_lines
+  -- clamp scroll offset (0 = bottom, negative = scrolled up)
+  local max_scroll = math.max(0, total - visible)
+  if -build_scroll > max_scroll then
+    build_scroll = -max_scroll
+  end
+  local start = total + build_scroll - visible + 1
+  if start < 1 then start = 1 end
+  if build_scroll ~= 0 then
+    panel:label({ text = "(scrolled up, " .. (-build_scroll) .. " lines)  PgUp/PgDn to scroll", style = "muted" })
+  end
+  for i = start, math.min(start + visible - 1, total) do
+    local line = build_lines[i]
+    local style = "default"
+    if line:match("^--- Build failed") then
+      style = "error"
+    elseif line:match("^--- Build succeeded") then
+      style = "info"
+    elseif line:match("^--- Build started") then
+      style = "muted"
+    end
+    panel:label({ text = line, style = style })
+  end
+end
+
+local function build_on_event(ev)
+  if ev.type == "mouse" then
+    if ev.button == "wheel_up" then
+      build_scroll = math.max(build_scroll - 3, -math.max(0, #build_lines - 10))
+      build_panel:redraw()
+      return true
+    elseif ev.button == "wheel_down" then
+      build_scroll = math.min(build_scroll + 3, 0)
+      build_panel:redraw()
+      return true
+    end
+  elseif ev.type == "key" then
+    local _, h = build_panel:size()
+    local visible = h - 2
+    if visible < 1 then visible = 1 end
+    if ev.key == "PgUp" then
+      build_scroll = math.max(build_scroll - visible, -math.max(0, #build_lines - 10))
+      if build_panel then build_panel:redraw() end
+      return true
+    elseif ev.key == "PgDn" then
+      build_scroll = math.min(build_scroll + visible, 0)
+      if build_panel then build_panel:redraw() end
+      return true
+    elseif ev.key == "Up" then
+      build_scroll = math.max(build_scroll - 1, -math.max(0, #build_lines - 10))
+      if build_panel then build_panel:redraw() end
+      return true
+    elseif ev.key == "Down" then
+      build_scroll = math.min(build_scroll + 1, 0)
+      if build_panel then build_panel:redraw() end
+      return true
+    end
+  end
+  return false
+end
+
 ttt.register({
   commands = commands,
   bottom = {
     title = "Build",
-    render = function(panel)
-      build_panel = panel
-      if #build_lines == 0 then
-        panel:label({ text = "No build output yet.", style = "muted" })
-        return
-      end
-      local _, h = panel:size()
-      local visible = h - 2
-      if visible < 1 then visible = 1 end
-      local start = #build_lines - visible + 1
-      if start < 1 then start = 1 end
-      for i = start, #build_lines do
-        local line = build_lines[i]
-        local style = "default"
-        if line:match("^--- Build failed") then
-          style = "error"
-        elseif line:match("^--- Build succeeded") then
-          style = "info"
-        elseif line:match("^--- Build started") then
-          style = "muted"
-        end
-        panel:label({ text = line, style = style })
-      end
-    end,
+    render = build_render,
+    on_event = build_on_event,
   },
 })
 

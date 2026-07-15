@@ -9,7 +9,7 @@
     "commands": true,
     "editor.read": true,
     "editor.write": true,
-    "system.exec": ["bash", "git", "cmake", "find", "ls", "grep", "head"],
+    "system.exec": ["bash", "git", "cmake", "find", "ls", "grep", "head", "xclip", "wl-copy", "wl-paste"],
     "fs.read": true,
     "fs.write": true,
     "panel.drawer": true,

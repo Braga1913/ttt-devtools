@@ -33,7 +33,7 @@ if [[ -v "SEARCH_EXTS[$EXT_LOWER]" ]]; then
   done
   if [[ -n "$ROOT" && "$ROOT" != "$DIR" ]]; then
     for candidate_ext in "${CANDIDATES[@]}"; do
-      while IFS= read -r -r found; do
+      while IFS= read -r found; do
         if [[ -n "$found" ]]; then
           echo "$found"
           exit 0
@@ -55,7 +55,7 @@ done
 
 if [[ -n "$ROOT" && "$ROOT" != "$DIR" ]]; then
   for src_ext in cpp cc c cxx; do
-    while IFS= read -r -r found; do
+    while IFS= read -r found; do
       if [[ -n "$found" ]]; then
         echo "$found"
         exit 0

@@ -36,3 +36,7 @@ cmake -B "$BUILD_DIR" \
   -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
   $EXTRA \
   2>&1
+
+if [[ -f "$BUILD_DIR/compile_commands.json" ]]; then
+  ln -sf "$BUILD_DIR/compile_commands.json" "$ROOT/compile_commands.json"
+fi
